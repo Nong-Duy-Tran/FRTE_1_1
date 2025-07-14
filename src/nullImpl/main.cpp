@@ -1,7 +1,8 @@
-#include<iostream>
-#include<onnxruntime_cxx_api.h>
+#include <iostream>
+#include <onnxruntime/onnxruntime_cxx_api.h>
+#include <RetinaFace.h>
 
 int main() {
-    std::cout<<"Hello"<<std::endl;
-    return 0;
+    std::string model_path = "./model/retinaface_mobilenet25.onnx";
+    RetinaFace::RetinaFace();
 }
