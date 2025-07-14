@@ -1,0 +1,1 @@
+/usr/bin/c++     CMakeFiles/main_exec.dir/main.cpp.o  -o ../main_exec  -Wl,-rpath,/home/long.tran1/workenv/frvt/11/src/nullImpl/../lib ../../lib/libonnxruntime.so 
