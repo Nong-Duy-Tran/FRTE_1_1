@@ -1,7 +1,8 @@
 file(REMOVE_RECURSE
-  "../main_exec"
-  "../main_exec.pdb"
+  "CMakeFiles/main_exec.dir/RetinaFace.cpp.o"
   "CMakeFiles/main_exec.dir/main.cpp.o"
+  "main_exec"
+  "main_exec.pdb"
 )
 
 # Per-language clean rules from dependency scanning.

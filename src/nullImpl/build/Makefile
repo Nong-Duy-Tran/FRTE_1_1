@@ -123,6 +123,33 @@ main_exec/fast:
 	$(MAKE) -f CMakeFiles/main_exec.dir/build.make CMakeFiles/main_exec.dir/build
 .PHONY : main_exec/fast
 
+RetinaFace.o: RetinaFace.cpp.o
+
+.PHONY : RetinaFace.o
+
+# target to build an object file
+RetinaFace.cpp.o:
+	$(MAKE) -f CMakeFiles/main_exec.dir/build.make CMakeFiles/main_exec.dir/RetinaFace.cpp.o
+.PHONY : RetinaFace.cpp.o
+
+RetinaFace.i: RetinaFace.cpp.i
+
+.PHONY : RetinaFace.i
+
+# target to preprocess a source file
+RetinaFace.cpp.i:
+	$(MAKE) -f CMakeFiles/main_exec.dir/build.make CMakeFiles/main_exec.dir/RetinaFace.cpp.i
+.PHONY : RetinaFace.cpp.i
+
+RetinaFace.s: RetinaFace.cpp.s
+
+.PHONY : RetinaFace.s
+
+# target to generate assembly for a file
+RetinaFace.cpp.s:
+	$(MAKE) -f CMakeFiles/main_exec.dir/build.make CMakeFiles/main_exec.dir/RetinaFace.cpp.s
+.PHONY : RetinaFace.cpp.s
+
 main.o: main.cpp.o
 
 .PHONY : main.o
@@ -159,6 +186,9 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... edit_cache"
 	@echo "... main_exec"
+	@echo "... RetinaFace.o"
+	@echo "... RetinaFace.i"
+	@echo "... RetinaFace.s"
 	@echo "... main.o"
 	@echo "... main.i"
 	@echo "... main.s"
