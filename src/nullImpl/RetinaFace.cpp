@@ -73,7 +73,7 @@ std::vector<std::vector<anchor_box>> generate_anchors_fpn(const std::vector<anch
 
 std::vector<anchor_box> anchors_plane(int height, int width, int stride, const std::vector<anchor_box>& base_anchors) {
     std::vector<anchor_box> all_anchors;
-    all_anchors.reserve(base_anchors.size() * height * width);
+    all_anchors.reserve(base_anchors.size() * height * width); // why do we need to have an vector<anchor_box> that contain this much of element ?
     for (const auto& base_anchor : base_anchors) {
         for (int ih = 0; ih < height; ++ih) {
             int sh = ih * stride;
@@ -209,12 +209,14 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
     // --- 1. Pre-processing ---
     std::vector<float> input_tensor_values;
     preprocess(img, input_tensor_values);
-    
+
+    std::vector<int64_t> actual_input_dim = {1, 3, (int64_t)this->input_height_, (int64_t)this->input_width_};
+
     // --- 2. Create Input Tensor ---
     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
         memory_info, input_tensor_values.data(), input_tensor_values.size(), 
-        input_dims_.data(), input_dims_.size()
+        actual_input_dim.data(), actual_input_dim.size()
     );
 
     // --- 3. Run Inference ---
@@ -238,7 +240,7 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
 
     std::vector<Ort::Value> output_tensors = session_->Run(
         Ort::RunOptions{nullptr}, 
-        input_names_char.data(), &input_tensor, 1, 
+        input_names_char.data(), &input_tensor, input_names_char.size(), 
         output_names_char.data(), output_names_char.size()
     );
 
@@ -249,8 +251,11 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
     // The order depends on your ONNX model. Adjust indices [0], [1], [2] if needed.
     // Let's assume the order is: scores, boxes, landmarks.
     const float* scores_ptr = output_tensors[0].GetTensorData<float>();
+    std::cout << "number element:" << sizeof(scores_ptr)/sizeof(scores_ptr[0]) << std::endl;
     const float* boxes_ptr = output_tensors[1].GetTensorData<float>();
+    std::cout << "number element:" << sizeof(boxes_ptr)/sizeof(boxes_ptr[0]) << std::endl;
     const float* landmarks_ptr = output_tensors[2].GetTensorData<float>();
+    std::cout << "number element:" << sizeof(landmarks_ptr)/sizeof(landmarks_ptr[0]) << std::endl;
 
     size_t total_anchors = 0;
     for (int stride : _feat_stride_fpn) {
@@ -269,7 +274,7 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
         int num_anchors_per_loc = _num_anchors[key];
         int num_anchors_on_map = feat_h * feat_w * num_anchors_per_loc;
 
-        std::vector<anchor_box> anchors = anchors_plane(feat_h, feat_w, stride, _anchors_fpn[key]);
+        std::vector<anchor_box> anchors = anchors_plane(feat_h, feat_w, stride, _anchors_fpn[key]); // what is the meaning of this anchors vector, what does it contain? 
         
         for (size_t i = 0; i < anchors.size(); ++i) {
             float score = scores_ptr[current_anchor_offset + i];
