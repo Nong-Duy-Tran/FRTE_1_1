@@ -3,3 +3,5 @@ model
 **/build/main_exec
 **/build/CMakeCache.txt
 **/build/*.cmake
+**/build/*.json
+**/build/CMakeFiles/
