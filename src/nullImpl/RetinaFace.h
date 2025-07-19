@@ -8,16 +8,7 @@
 #include <string>
 #include <vector>
 #include <opencv2/opencv.hpp>
-
 #include <onnxruntime/onnxruntime_cxx_api.h>
-
-struct anchor_win
-{
-    float x_ctr;
-    float y_ctr;
-    float w;
-    float h;
-};
 
 struct anchor_box
 {
@@ -40,25 +31,6 @@ struct FaceDetectInfo
     FacePts pts;
 };
 
-struct anchor_cfg
-{
-public:
-    int STRIDE;
-    std::vector<int> SCALES;
-    int BASE_SIZE;
-    std::vector<float> RATIOS;
-    int ALLOWED_BORDER;
-
-    anchor_cfg()
-    {
-        STRIDE = 0;
-        SCALES.clear();
-        BASE_SIZE = 0;
-        RATIOS.clear();
-        ALLOWED_BORDER = 0;
-    }
-};
-
 
 class RetinaFace
 {
@@ -76,10 +48,8 @@ public:
 private:
     // --- Pre-processing and Post-processing (Largely unchanged logic) ---
     // These methods perform calculations on the raw model output and are not tied to the inference engine.
-    anchor_box bbox_pred(anchor_box anchor, cv::Vec4f regress);
-    std::vector<anchor_box> bbox_pred(std::vector<anchor_box> anchors, std::vector<cv::Vec4f> regress);
-    FacePts landmark_pred(anchor_box anchor, FacePts facePt);
-    std::vector<FacePts> landmark_pred(std::vector<anchor_box> anchors, std::vector<FacePts> facePts);
+    anchor_box bbox_pred(const anchor_box& prior, const cv::Vec4f& regress, const float variance[]);
+    FacePts landmark_pred(const anchor_box& prior, const float* landm_regress, const float variance[]);
     static bool CompareBBox(const FaceDetectInfo &a, const FaceDetectInfo &b);
     std::vector<FaceDetectInfo> nms(std::vector<FaceDetectInfo> &bboxes, float threshold);
 
@@ -104,10 +74,7 @@ private:
     std::vector<std::string> input_node_names_;
     std::vector<std::string> output_node_names_;
     std::vector<int64_t> input_dims_; // e.g., {1, 3, 480, 640}
-    
-    // --- RetinaFace Algorithm Configuration (Unchanged) ---
-    // These members are related to the RetinaFace algorithm itself (anchor generation, etc.)
-    // and are independent of the backend framework.
+
     float nms_threshold_;
     bool use_gpu_;
     int input_width_;
@@ -118,13 +85,14 @@ private:
     float pixel_stds[3] = {1.0f, 1.0f, 1.0f};
     float pixel_scale_ = 1.0f;
 
-    // Anchor generation configuration
-    std::vector<float> _ratio;
-    std::vector<anchor_cfg> cfg;
-    std::vector<int> _feat_stride_fpn;
-    std::map<std::string, std::vector<anchor_box>> _anchors_fpn;
-    std::map<std::string, std::vector<anchor_box>> _anchors;
-    std::map<std::string, int> _num_anchors;
+    float variance[2] = {0.1f, 0.2f};
+
+    // Anchor generation configuration (we will simplify this)
+    std::vector<std::vector<int>> min_sizes_;
+    std::vector<int> steps_;
+    
+    // This will hold the generated priors in [cx, cy, w, h] format
+    std::vector<anchor_box> priors_; 
 };
 
 #endif // RETINAFACE_ONNX_H

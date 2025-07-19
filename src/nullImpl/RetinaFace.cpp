@@ -1,97 +1,6 @@
 #include "RetinaFace.h"
 #include <numeric> // For std::accumulate
 
-// ######################################################################
-// This entire section of code is FRAMEWORK-INDEPENDENT.
-// It deals with the core logic of the RetinaFace algorithm, such as
-// anchor generation, bounding box transformations, and NMS.
-// It does not need to be changed when migrating from MXNet to ONNX Runtime.
-// ######################################################################
-
-// --- Start of Framework-Independent Code ---
-
-anchor_win _whctrs(anchor_box anchor) {
-    anchor_win win;
-    win.w = anchor.x2 - anchor.x1 + 1;
-    win.h = anchor.y2 - anchor.y1 + 1;
-    win.x_ctr = anchor.x1 + 0.5f * (win.w - 1);
-    win.y_ctr = anchor.y1 + 0.5f * (win.h - 1);
-    return win;
-}
-
-anchor_box _mkanchors(anchor_win win) {
-    anchor_box anchor;
-    anchor.x1 = win.x_ctr - 0.5f * (win.w - 1);
-    anchor.y1 = win.y_ctr - 0.5f * (win.h - 1);
-    anchor.x2 = win.x_ctr + 0.5f * (win.w - 1);
-    anchor.y2 = win.y_ctr + 0.5f * (win.h - 1);
-    return anchor;
-}
-
-std::vector<anchor_box> _ratio_enum(anchor_box anchor, std::vector<float> ratios) {
-    std::vector<anchor_box> anchors;
-    for (float ratio : ratios) {
-        anchor_win win = _whctrs(anchor);
-        float size = win.w * win.h;
-        float scale = size / ratio;
-        win.w = std::round(sqrt(scale));
-        win.h = std::round(win.w * ratio);
-        anchors.push_back(_mkanchors(win));
-    }
-    return anchors;
-}
-
-std::vector<anchor_box> _scale_enum(anchor_box anchor, std::vector<int> scales) {
-    std::vector<anchor_box> anchors;
-    for (int scale : scales) {
-        anchor_win win = _whctrs(anchor);
-        win.w = win.w * scale;
-        win.h = win.h * scale;
-        anchors.push_back(_mkanchors(win));
-    }
-    return anchors;
-}
-
-std::vector<anchor_box> generate_anchors(int base_size, const std::vector<float>& ratios, const std::vector<int>& scales) {
-    anchor_box base_anchor = {0.0f, 0.0f, (float)base_size - 1, (float)base_size - 1};
-    std::vector<anchor_box> ratio_anchors = _ratio_enum(base_anchor, ratios);
-    std::vector<anchor_box> anchors;
-    for (const auto& r_anchor : ratio_anchors) {
-        std::vector<anchor_box> s_anchors = _scale_enum(r_anchor, scales);
-        anchors.insert(anchors.end(), s_anchors.begin(), s_anchors.end());
-    }
-    return anchors;
-}
-
-std::vector<std::vector<anchor_box>> generate_anchors_fpn(const std::vector<anchor_cfg>& cfg) {
-    std::vector<std::vector<anchor_box>> anchors;
-    for (const auto& c : cfg) {
-        anchors.push_back(generate_anchors(c.BASE_SIZE, c.RATIOS, c.SCALES));
-    }
-    return anchors;
-}
-
-std::vector<anchor_box> anchors_plane(int height, int width, int stride, const std::vector<anchor_box>& base_anchors) {
-    std::vector<anchor_box> all_anchors;
-    all_anchors.reserve(base_anchors.size() * height * width); // why do we need to have an vector<anchor_box> that contain this much of element ?
-    for (const auto& base_anchor : base_anchors) {
-        for (int ih = 0; ih < height; ++ih) {
-            int sh = ih * stride;
-            for (int iw = 0; iw < width; ++iw) {
-                int sw = iw * stride;
-                anchor_box tmp = {
-                    base_anchor.x1 + sw,
-                    base_anchor.y1 + sh,
-                    base_anchor.x2 + sw,
-                    base_anchor.y2 + sh
-                };
-                all_anchors.push_back(tmp);
-            }
-        }
-    }
-    return all_anchors;
-}
-
 void clip_boxes(anchor_box &box, int width, int height) {
     box.x1 = std::max(0.0f, std::min(box.x1, (float)width - 1));
     box.y1 = std::max(0.0f, std::min(box.y1, (float)height - 1));
@@ -109,43 +18,11 @@ void clip_boxes(anchor_box &box, int width, int height) {
 RetinaFace::RetinaFace(float nms, bool use_gpu)
     : env_(ORT_LOGGING_LEVEL_WARNING, "RetinaFace-ONNX"),
       nms_threshold_(nms), use_gpu_(use_gpu) {
-    
-    // --- Anchor Configuration ---
-    // This logic is moved from the old `initialize` method to the constructor.
-    _feat_stride_fpn = {32, 16, 8};
-    _ratio = {1.0f, 1.5f}; // Example ratio, adjust if needed for your model
 
-    anchor_cfg cfg32;
-    cfg32.SCALES = {32, 16};
-    cfg32.BASE_SIZE = 16;
-    cfg32.RATIOS = _ratio;
-    cfg32.ALLOWED_BORDER = 9999;
-    cfg32.STRIDE = 32;
-    cfg.push_back(cfg32);
-
-    anchor_cfg cfg16;
-    cfg16.SCALES = {8, 4};
-    cfg16.BASE_SIZE = 16;
-    cfg16.RATIOS = _ratio;
-    cfg16.ALLOWED_BORDER = 9999;
-    cfg16.STRIDE = 16;
-    cfg.push_back(cfg16);
-    
-    anchor_cfg cfg8;
-    cfg8.SCALES = {2, 1};
-    cfg8.BASE_SIZE = 16;
-    cfg8.RATIOS = _ratio;
-    cfg8.ALLOWED_BORDER = 9999;
-    cfg8.STRIDE = 8;
-    cfg.push_back(cfg8);
-
-    // --- Pre-calculate Anchors ---
-    std::vector<std::vector<anchor_box>> anchors_fpn = generate_anchors_fpn(cfg);
-    for (size_t i = 0; i < anchors_fpn.size(); ++i) {
-        std::string key = "stride" + std::to_string(_feat_stride_fpn[i]);
-        _anchors_fpn[key] = anchors_fpn[i];
-        _num_anchors[key] = static_cast<int>(anchors_fpn[i].size());
-    }
+    // --- Anchor Configuration (matches cfg_mnet from Python) ---
+    steps_ = {8, 16, 32};
+    min_sizes_ = {{16, 32}, {64, 128}, {256, 512}};
+    // Note: The priors will be generated in initialize() once we know the input size.
 }
 
 RetinaFace::~RetinaFace() {
@@ -195,6 +72,32 @@ void RetinaFace::initialize(const std::string& model_path) {
         Ort::AllocatedStringPtr output_name_ptr = session_->GetOutputNameAllocated(i, allocator);
         output_node_names_.push_back(output_name_ptr.get());
     }
+
+    priors_.clear();
+    std::vector<std::pair<int, int>> feature_maps;
+    for (const auto& step : steps_) {
+        feature_maps.push_back({
+            (int)ceilf((float)input_height_ / step),
+            (int)ceilf((float)input_width_ / step)
+        });
+    }
+
+    for (size_t k = 0; k < feature_maps.size(); ++k) {
+        auto f_map = feature_maps[k];
+        auto m_sizes = min_sizes_[k];
+        for (int i = 0; i < f_map.first; ++i) {
+            for (int j = 0; j < f_map.second; ++j) {
+                for (const auto& min_size : m_sizes) {
+                    float s_kx = (float)min_size / input_width_;
+                    float s_ky = (float)min_size / input_height_;
+                    float cx = ((float)j + 0.5f) * steps_[k] / input_width_;
+                    float cy = ((float)i + 0.5f) * steps_[k] / input_height_;
+                    priors_.push_back({cx, cy, s_kx, s_ky});
+                }
+            }
+        }
+    }
+
 }
 
 std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, float scale) {
@@ -220,12 +123,6 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
     );
 
     // --- 3. Run Inference ---
-    // std::vector<Ort::Value> output_tensors = session_->Run(
-    //     Ort::RunOptions{nullptr}, 
-    //     input_node_names_.data(), &input_tensor, 1, 
-    //     output_node_names_.data(), output_node_names_.size()
-    // );
-
     std::vector<const char*> input_names_char;
     input_names_char.reserve(input_node_names_.size());
     for (const auto& name : input_node_names_) {
@@ -244,104 +141,108 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
         output_names_char.data(), output_names_char.size()
     );
 
-    
-
     // --- 4. Post-processing ---
-    // Assuming 3 outputs: [boxes, scores, landmarks] OR [scores, boxes, landmarks]
-    // The order depends on your ONNX model. Adjust indices [0], [1], [2] if needed.
-    // Let's assume the order is: scores, boxes, landmarks.
-    const float* scores_ptr = output_tensors[0].GetTensorData<float>();
-    std::cout << "number element:" << sizeof(scores_ptr)/sizeof(scores_ptr[0]) << std::endl;
-    const float* boxes_ptr = output_tensors[1].GetTensorData<float>();
-    std::cout << "number element:" << sizeof(boxes_ptr)/sizeof(boxes_ptr[0]) << std::endl;
+
+    const float* loc_ptr = output_tensors[0].GetTensorData<float>();
+    const float* conf_ptr = output_tensors[1].GetTensorData<float>();
     const float* landmarks_ptr = output_tensors[2].GetTensorData<float>();
-    std::cout << "number element:" << sizeof(landmarks_ptr)/sizeof(landmarks_ptr[0]) << std::endl;
 
-    size_t total_anchors = 0;
-    for (int stride : _feat_stride_fpn) {
-        int feat_h = (input_height_ + stride - 1) / stride;
-        int feat_w = (input_width_ + stride - 1) / stride;
-        std::string key = "stride" + std::to_string(stride);
-        int num_anchors_per_loc = _num_anchors[key];
-        total_anchors += feat_h * feat_w * num_anchors_per_loc;
+    int loc_ptr_size = output_tensors[0].GetTensorTypeAndShapeInfo().GetElementCount();
+    std::cout << "number boxes element:" << loc_ptr_size << std::endl;
+    for (int i = 0; i < loc_ptr_size; i++) {
+        if (loc_ptr[i] < 0) std::cout << "Nope 1" << std::endl; break;
     }
 
-    size_t current_anchor_offset = 0;
-    for (int stride : _feat_stride_fpn) {
-        int feat_h = (input_height_ + stride - 1) / stride;
-        int feat_w = (input_width_ + stride - 1) / stride;
-        std::string key = "stride" + std::to_string(stride);
-        int num_anchors_per_loc = _num_anchors[key];
-        int num_anchors_on_map = feat_h * feat_w * num_anchors_per_loc;
+    int conf_ptr_size = output_tensors[1].GetTensorTypeAndShapeInfo().GetElementCount();
+    std::cout << "number scores element:" << conf_ptr_size << std::endl;
+    for (int i = 0; i < conf_ptr_size; i++) {
+        if (conf_ptr[i] < 0) std::cout << "Nope 2" << std::endl; break;
+    }
 
-        std::vector<anchor_box> anchors = anchors_plane(feat_h, feat_w, stride, _anchors_fpn[key]); // what is the meaning of this anchors vector, what does it contain? 
-        
-        for (size_t i = 0; i < anchors.size(); ++i) {
-            float score = scores_ptr[current_anchor_offset + i];
-            
-            if (score < threshold) continue;
+    int landmarks_ptr_size = output_tensors[2].GetTensorTypeAndShapeInfo().GetElementCount();
+    std::cout << "number landmarks element:" << landmarks_ptr_size << std::endl;
+    for (int i = 0; i < landmarks_ptr_size; i++) {
+        if (landmarks_ptr[i] < 0) std::cout << "Nope 3" << std::endl; break;
+    }
 
-            cv::Vec4f regress;
-            regress[0] = boxes_ptr[(current_anchor_offset + i) * 4 + 0];
-            regress[1] = boxes_ptr[(current_anchor_offset + i) * 4 + 1];
-            regress[2] = boxes_ptr[(current_anchor_offset + i) * 4 + 2];
-            regress[3] = boxes_ptr[(current_anchor_offset + i) * 4 + 3];
+    // ====================================================================
+    // CLARIFICATION POINT 2: Correct Scaling Factors
+    // ====================================================================
+    // The Python script defines `scale` and `scale1` arrays to convert the
+    // normalized coordinates back to the pixel coordinates of the *resized*
+    // input image (e.g., 640x640). We will do the same.
+    // Note: The Python script seems to do two scalings. One to the resized
+    // image size and then another to the original. We can do this in one step.
+    float scale_boxes[4] = {im_w, im_h, im_w, im_h};
+    float scale_landms[10];
+    for (int i = 0; i < 5; ++i) {
+        scale_landms[i*2 + 0] = im_w;
+        scale_landms[i*2 + 1] = im_h;
+    }
+    
+    // Iterate through all the priors (anchors).
+    for (size_t i = 0; i < priors_.size(); ++i) {
+        // Get the confidence score for the "face" class (index 1).
+        float score = conf_ptr[i * 2 + 1];
 
-            anchor_box rect = bbox_pred(anchors[i], regress);
-            clip_boxes(rect, input_width_, input_height_);
-
-            FacePts pts;
-            for (size_t j = 0; j < 5; ++j) {
-                pts.x[j] = landmarks_ptr[(current_anchor_offset + i) * 10 + j * 2 + 0];
-                pts.y[j] = landmarks_ptr[(current_anchor_offset + i) * 10 + j * 2 + 1];
-            }
-            FacePts landmarks = landmark_pred(anchors[i], pts);
-
-            FaceDetectInfo info;
-            info.score = score;
-            info.rect = rect;
-            info.pts = landmarks;
-            proposals.push_back(info);
+        if (score < threshold) {
+            continue;
         }
-        current_anchor_offset += num_anchors_on_map;
+
+        // Decode the bounding box and landmarks. These are normalized (0-1 range).
+        cv::Vec4f regress(loc_ptr[i*4 + 0], loc_ptr[i*4 + 1], loc_ptr[i*4 + 2], loc_ptr[i*4 + 3]);
+        anchor_box rect_normalized = bbox_pred(priors_[i], regress, variance);
+        
+        const float* landm_regress = &landmarks_ptr[i * 10];
+        FacePts landmarks_normalized = landmark_pred(priors_[i], landm_regress, variance);
+
+        // ====================================================================
+        // CLARIFICATION POINT 3: Scaling to Original Image Size
+        // ====================================================================
+        // Now we convert the normalized coordinates directly to the original
+        // image's pixel coordinates by multiplying with our scale factors.
+        // This avoids intermediate scaling and is more efficient.
+        FaceDetectInfo info;
+        info.score = score;
+        info.rect.x1 = rect_normalized.x1 * scale_boxes[0];
+        info.rect.y1 = rect_normalized.y1 * scale_boxes[1];
+        info.rect.x2 = rect_normalized.x2 * scale_boxes[2];
+        info.rect.y2 = rect_normalized.y2 * scale_boxes[3];
+
+        for (int j = 0; j < 5; ++j) {
+            info.pts.x[j] = landmarks_normalized.x[j] * scale_landms[j*2];
+            info.pts.y[j] = landmarks_normalized.y[j] * scale_landms[j*2+1];
+        }
+        
+        // Before NMS, all coordinates are now in the original image's space.
+        proposals.push_back(info);
     }
+    
 
     // --- 5. NMS ---
     std::vector<FaceDetectInfo> final_faces = nms(proposals, nms_threshold_);
-
-    // --- 6. Scale results back to original image size ---
-    float scale_x = im_w / input_width_;
-    float scale_y = im_h / input_height_;
-    for (auto& face : final_faces) {
-        face.rect.x1 *= scale_x;
-        face.rect.y1 *= scale_y;
-        face.rect.x2 *= scale_x;
-        face.rect.y2 *= scale_y;
-        for (int i = 0; i < 5; ++i) {
-            face.pts.x[i] *= scale_x;
-            face.pts.y[i] *= scale_y;
-        }
-    }
 
     return final_faces;
 }
 
 void RetinaFace::preprocess(cv::Mat& img, std::vector<float>& input_tensor_values) {
-    cv::Mat resized_img;
-    cv::resize(img, resized_img, cv::Size(input_width_, input_height_));
+    cv::Mat rgb_img;
+    cv::cvtColor(img, rgb_img, cv::COLOR_BGR2RGB);
 
-    resized_img.convertTo(resized_img, CV_32FC3);
-    resized_img -= cv::Scalar(pixel_means[0], pixel_means[1], pixel_means[2]);
-
-    input_tensor_values.resize(1 * 3 * input_height_ * input_width_);
+    cv::Mat float_img;
+    rgb_img.convertTo(float_img, CV_32FC3); 
     
-    // HWC to CHW conversion
+    cv::Mat resized_img;
+    cv::resize(float_img, resized_img, cv::Size(this->input_width_, this->input_height_));
+
+    resized_img -= cv::Scalar(104.0f, 117.0f, 123.0f);
+    input_tensor_values.resize(1 * 3 * this->input_height_ * this->input_width_);
+    
     for (int c = 0; c < 3; ++c) {
-        for (int h = 0; h < input_height_; ++h) {
-            for (int w = 0; w < input_width_; ++w) {
-                // BGR to RGB is handled implicitly by reversing the channel loop
-                input_tensor_values[c * (input_height_ * input_width_) + h * input_width_ + w] =
-                    resized_img.at<cv::Vec3f>(h, w)[2-c]; // 2-c for BGR->RGB
+        for (int h = 0; h < this->input_height_; ++h) {
+            for (int w = 0; w < this->input_width_; ++w) {
+                int out_idx = c * (this->input_height_ * this->input_width_) + h * this->input_width_ + w;
+                input_tensor_values[out_idx] = resized_img.at<cv::Vec3f>(h, w)[c];
             }
         }
     }
@@ -349,37 +250,30 @@ void RetinaFace::preprocess(cv::Mat& img, std::vector<float>& input_tensor_value
 
 // --- Framework-Independent Helper Methods (No changes needed) ---
 
-anchor_box RetinaFace::bbox_pred(anchor_box anchor, cv::Vec4f regress) {
-    anchor_box rect;
-    float width = anchor.x2 - anchor.x1 + 1;
-    float height = anchor.y2 - anchor.y1 + 1;
-    float ctr_x = anchor.x1 + 0.5f * (width - 1.0f);
-    float ctr_y = anchor.y1 + 0.5f * (height - 1.0f);
-
-    float pred_ctr_x = regress[0] * width + ctr_x;
-    float pred_ctr_y = regress[1] * height + ctr_y;
-    float pred_w = exp(regress[2]) * width;
-    float pred_h = exp(regress[3]) * height;
-
-    rect.x1 = pred_ctr_x - 0.5f * (pred_w - 1.0f);
-    rect.y1 = pred_ctr_y - 0.5f * (pred_h - 1.0f);
-    rect.x2 = pred_ctr_x + 0.5f * (pred_w - 1.0f);
-    rect.y2 = pred_ctr_y + 0.5f * (pred_h - 1.0f);
-    return rect;
+anchor_box RetinaFace::bbox_pred(const anchor_box& prior, const cv::Vec4f& regress, const float variance[]) {
+    // prior is [cx, cy, w, h]
+    // regress is [dx, dy, dw, dh]
+    float cx = prior.x1 + regress[0] * variance[0] * prior.x2;
+    float cy = prior.y1 + regress[1] * variance[0] * prior.y2;
+    float w = prior.x2 * exp(regress[2] * variance[1]);
+    float h = prior.y2 * exp(regress[3] * variance[1]);
+    
+    // convert [cx, cy, w, h] to [x1, y1, x2, y2]
+    anchor_box box;
+    box.x1 = (cx - w / 2.0f);
+    box.y1 = (cy - h / 2.0f);
+    box.x2 = (cx + w / 2.0f);
+    box.y2 = (cy + h / 2.0f);
+    return box;
 }
 
-FacePts RetinaFace::landmark_pred(anchor_box anchor, FacePts facePt) {
-    FacePts pt;
-    float width = anchor.x2 - anchor.x1 + 1;
-    float height = anchor.y2 - anchor.y1 + 1;
-    float ctr_x = anchor.x1 + 0.5f * (width - 1.0f);
-    float ctr_y = anchor.y1 + 0.5f * (height - 1.0f);
-
-    for (size_t j = 0; j < 5; j++) {
-        pt.x[j] = facePt.x[j] * width + ctr_x;
-        pt.y[j] = facePt.y[j] * height + ctr_y;
+FacePts RetinaFace::landmark_pred(const anchor_box& prior, const float* landm_regress, const float variance[]) {
+    FacePts pts;
+    for (int i = 0; i < 5; ++i) {
+        pts.x[i] = prior.x1 + landm_regress[i*2 + 0] * variance[0] * prior.x2;
+        pts.y[i] = prior.y1 + landm_regress[i*2 + 1] * variance[0] * prior.y2;
     }
-    return pt;
+    return pts;
 }
 
 bool RetinaFace::CompareBBox(const FaceDetectInfo &a, const FaceDetectInfo &b) {
