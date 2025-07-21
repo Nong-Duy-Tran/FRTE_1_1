@@ -34,13 +34,6 @@ public:
             std::vector<FRVT::EyePair> &eyeCoordinates) override;
 
     FRVT::ReturnStatus
-    createIrisTemplate(
-            const std::vector<FRVT::Image> &irises,
-            FRVT::TemplateRole role,
-            std::vector<uint8_t> &templ,
-            std::vector<FRVT::IrisAnnulus> &irisLocations) override;
-
-    FRVT::ReturnStatus
     createFaceTemplate(
             const FRVT::Image &image,
             FRVT::TemplateRole role,
