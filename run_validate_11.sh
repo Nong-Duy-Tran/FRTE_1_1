@@ -1,6 +1,6 @@
 #!/bin/bash
 
-source ../common/scripts/utils.sh
+source ./scripts/utils.sh
 
 # Check version of OS
 check_os
