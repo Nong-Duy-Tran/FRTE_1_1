@@ -1,6 +1,7 @@
 #include <iostream>
 #include <onnxruntime/onnxruntime_cxx_api.h>
 #include <RetinaFace.h>
+#include <ArcFace.h>
 #include <opencv2/opencv.hpp>
 #include <unistd.h>
 #include <limits.h>
@@ -18,25 +19,58 @@ std::string get_executable_dir() {
 int main() {
     std::string exec_dir = get_executable_dir();
 
-    std::string model_path = exec_dir + "/../src/model/retinaface_mobilenet25.onnx";
+    std::string detect_model_path = exec_dir + "/../src/model/retinaface_mobilenet25.onnx";
+    std::string recognize_model_path = exec_dir + "/../src/model/arcface.onnx";
     std::string image_path = exec_dir + "/../src/img/images.jpeg";
+    std::string output_dir = exec_dir + "/../src/img/";
     std::string output_path = exec_dir + "/../src/img/output.jpeg";
 
-    std::cout << model_path << std::endl << image_path << std::endl;
+    std::cout << detect_model_path << std::endl << recognize_model_path << std::endl;
 
     RetinaFace detector(0.4, false);
-    detector.initialize(model_path);
+    detector.initialize(detect_model_path);
 
     cv::Mat img = cv::imread(image_path);
-
     std::vector<FaceDetectInfo> faces = detector.detect(img, 0.6f);
+    std::cout << "Number of faces detected: " << faces.size() << std::endl;
+    int face_counter = 0;
 
     for (const auto& face : faces) {
-        // --- 1. Draw the Bounding Box ---
-        // Get the rectangle coordinates
-        cv::Point pt1(static_cast<int>(face.rect.x1), static_cast<int>(face.rect.y1));
-        cv::Point pt2(static_cast<int>(face.rect.x2), static_cast<int>(face.rect.y2));
+        int x1 = static_cast<int>(face.rect.x1);
+        int y1 = static_cast<int>(face.rect.y1);
+        int x2 = static_cast<int>(face.rect.x2);
+        int y2 = static_cast<int>(face.rect.y2);
+
+        x1 = std::max(0, x1);
+        y1 = std::max(0, y1);
+        x2 = std::min(img.cols, x2);
+        y2 = std::min(img.rows, y2);
+
+        cv::Point pt1(static_cast<int>(x1), static_cast<int>(y1));
+        cv::Point pt2(static_cast<int>(x2), static_cast<int>(y2));
         
+        if (x1 < x2 && y1 < y2) {
+            // --- 2. Define the Region of Interest (ROI) ---
+            cv::Rect roi(x1, y1, x2 - x1, y2 - y1);
+            
+            // --- 3. Crop the Image using the ROI ---
+            // This creates a new cv::Mat that points to the cropped region of the original image.
+            cv::Mat cropped_face = img(roi);
+
+            // --- 4. Save the Cropped Face ---
+            std::string cropped_filename = "face_" + std::to_string(face_counter) + ".jpg";
+            std::filesystem::path cropped_output_path = output_dir + "/" + cropped_filename;
+            
+            bool success = cv::imwrite(cropped_output_path.string(), cropped_face);
+            if (success) {
+                std::cout << "Saved cropped face to: " << cropped_output_path << std::endl;
+            } else {
+                std::cerr << "Error: Failed to save cropped face to: " << cropped_output_path << std::endl;
+            }
+        }
+
+        face_counter++;
+
         // Draw the rectangle on the image
         // Parameters: image, point1, point2, color (BGR), thickness
         cv::rectangle(img, pt1, pt2, cv::Scalar(0, 0, 255), 2); // Red rectangle
@@ -75,5 +109,11 @@ int main() {
     } else {
         std::cerr << "Error: Failed to save the image to: " << output_path << std::endl;
     }
+
+    ArcFace recognizor;
+    recognizor.initialize(recognize_model_path);
+
+    cv::Mat crop_img = cv::imread(output_dir + "/" + "face_0.jpg");
+    recognizor.GetEmbedding(crop_img, faces[0].pts);
     return 0;
 }
