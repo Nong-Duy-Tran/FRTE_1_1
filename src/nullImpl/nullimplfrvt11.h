@@ -12,6 +12,9 @@
 #define NULLIMPLFRVT11_H_
 
 #include "frvt11.h"
+#include "ArcFace.h"
+#include "RetinaFace.h"
+#include <vector>
 
 /*
  * Declare the implementation class of the FRVT 1:1 Interface
@@ -52,6 +55,8 @@ public:
 private:
     std::string configDir;
     static const int featureVectorSize{4};
+    ArcFace recognizor;
+    RetinaFace detector;
     // Some other members
 };
 }
