@@ -114,6 +114,6 @@ int main() {
     recognizor.initialize(recognize_model_path);
 
     cv::Mat crop_img = cv::imread(output_dir + "/" + "face_0.jpg");
-    recognizor.GetEmbedding(crop_img, faces[0].pts);
+    std::vector<float> embedding = recognizor.GetEmbedding(crop_img, faces[0].pts);
     return 0;
 }
