@@ -47,8 +47,8 @@ void ArcFace::initialize(const std::string& model_path) {
     }
 }
 
-cv::Mat ArcFace::preprocess(cv::Mat img, FacePts landmark) {
-    
+std::vector<float> ArcFace::preprocess(cv::Mat img, FacePts landmark) {
+
     // normalization process
     cv::Mat src(5, 2, CV_32FC1, reference_landmark_);
 
@@ -62,7 +62,7 @@ cv::Mat ArcFace::preprocess(cv::Mat img, FacePts landmark) {
 
     cv::Mat dst(5, 2, CV_32FC1, dest_landmark);
 
-    cv::Mat M = cv::estimateAffine2D(dst, src);
+    cv::Mat M = cv::estimateAffinePartial2D(dst, src);
 
     // Handle the case where the estimation fails
     if (M.empty()) {
@@ -79,8 +79,22 @@ cv::Mat ArcFace::preprocess(cv::Mat img, FacePts landmark) {
     // resize into (112, 112)
     cv::cvtColor(img_aligned, img_aligned, cv::COLOR_BGR2RGB);
     cv::resize(img_aligned, img_aligned, cv::Size(input_width_, input_height_));
+    
+    // Convert to float32 and normalize to the [-1, 1] range, just like the Python script.
+    img_aligned.convertTo(img_aligned, CV_32FC3);
+    img_aligned = (img_aligned - 127.5f) / 127.5f;
 
-    return img_aligned;
+    std::vector<float> input_tensor_values(1 * 3 * input_height_ * input_width_);
+    for (int c = 0; c < 3; ++c) {
+        for (int h = 0; h < input_height_; ++h) {
+            for (int w = 0; w < input_width_; ++w) {
+                input_tensor_values[c * input_height_ * input_width_ + h * input_width_ + w] = 
+                    img_aligned.at<cv::Vec3f>(h, w)[c];
+            }
+        }
+    }
+
+    return input_tensor_values;
 }
 
 
@@ -90,16 +104,13 @@ std::vector<float> ArcFace::GetEmbedding(cv::Mat img, FacePts landmarks) {
         return embedding;
     }
     
-    cv::Mat processed_img = preprocess(img, landmarks);
+    std::vector<float> input_tensor_values = preprocess(img, landmarks);
     
-    size_t proImgSize = processed_img.total() * processed_img.elemSize();
-    float* proImgData = (float*)processed_img.data;
-
     Ort::MemoryInfo memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
     std::vector<int64_t> fixed_input_dims = {1, 3, input_height_, input_width_};
     Ort::Value input_tensor = Ort::Value::CreateTensor<float>(
         memory_info,
-        proImgData, proImgSize,
+        input_tensor_values.data(), input_tensor_values.size(),
         fixed_input_dims.data(), fixed_input_dims.size()
     );
 
@@ -122,8 +133,22 @@ std::vector<float> ArcFace::GetEmbedding(cv::Mat img, FacePts landmarks) {
         output_names_char.data(), output_node_names_.size()
     );
 
-    const float* a = output_tensors[0].GetTensorData<float>();
+    const float* embedding_data = output_tensors[0].GetTensorData<float>();
+    auto tensor_info = output_tensors[0].GetTensorTypeAndShapeInfo();
+    size_t embedding_size = tensor_info.GetElementCount(); // e.g., 128, 512...
 
-    std::cout<<"embedding: " << a[0] << std::endl;
+    std::vector<float> embedding(embedding_data, embedding_data + embedding_size);
+
+    float norm = 0.0f;
+    for (float val : embedding) {
+        norm += val * val;
+    }
+
+    norm = std::sqrt(norm);
+    if (norm > 1e-6) {
+        for (float& val : embedding) {
+            val /= norm;
+        }
+    }
     return embedding;
 }

@@ -30,7 +30,7 @@ class ArcFace
             return fhandle.good();
         }
 
-        cv::Mat preprocess(cv::Mat img, FacePts landmark);
+        std::vector<float> preprocess(cv::Mat img, FacePts landmark);
 
     private:
         // --- ONNX Runtime Members (Replaces MXNet members) ---
