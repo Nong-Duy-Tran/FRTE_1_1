@@ -25,12 +25,36 @@ NullImplFRVT11::NullImplFRVT11() {}
 
 NullImplFRVT11::~NullImplFRVT11() {}
 
+double calculateCosineSimilarity(const float* vecA, const float* vecB, size_t size) {
+    if (size == 0) {
+        return 0.0;
+    }
+
+    double dotProduct = 0.0;
+    double normA = 0.0;
+    double normB = 0.0;
+
+    for (size_t i = 0; i < size; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+
+    double magnitude = std::sqrt(normA) * std::sqrt(normB);
+    
+    if (magnitude < 1e-6) { // Avoid division by zero
+        return 0.0;
+    }
+
+    return dotProduct / magnitude;
+}
+
 ReturnStatus
 NullImplFRVT11::initialize(const std::string &configDir)
 {
     this->configDir = configDir;
-    string arcFaceModelPath = configDir + "/arcface.onnx";
-    string retinaFaceModelPath = configDir + "/retinaface_mobilenet25.onnx";
+    string arcFaceModelPath = configDir + "/model/arcface.onnx";
+    string retinaFaceModelPath = configDir + "/model/retinaface_mobilenet25.onnx";
 
     recognizor.initialize(arcFaceModelPath);
     detector.initialize(retinaFaceModelPath);
@@ -134,8 +158,8 @@ NullImplFRVT11::createFaceTemplate(
 {
     vector<FaceDetectInfo> detectionInfo;
 
-    int height = image.height - 1;
-    int width = image.width - 1;
+    int height = image.height;
+    int width = image.width;
     cv::Mat faceMat;
 
     bool canDetect = true;
@@ -146,9 +170,11 @@ NullImplFRVT11::createFaceTemplate(
         faceMat = cv::Mat(height, width, CV_8UC1, image.data.get());
     }
 
-    if (!faceMat.empty()) {
-        detectionInfo = detector.detect(faceMat);
+    if (faceMat.empty()) {
+        return ReturnStatus(ReturnCode::FaceDetectionError);    
     }
+
+    detectionInfo = detector.detect(faceMat);
 
     if (detectionInfo.empty()) {
         canDetect = false;
@@ -173,9 +199,10 @@ NullImplFRVT11::createFaceTemplate(
         FacePts landmarks =  detectionInfo[i].pts;
         anchor_box face = detectionInfo[i].rect;
         eyeCoordinates.push_back(EyePair(true, true, 
-            static_cast<uint16_t>(landmarks.x[0]), 
+            static_cast<uint16_t>(landmarks.x[0]), // Left eye
             static_cast<uint16_t>(landmarks.y[0]),
-            static_cast<uint16_t>(landmarks.x[1]), 
+
+            static_cast<uint16_t>(landmarks.x[1]), // Right eye
             static_cast<uint16_t>(landmarks.y[1])));
 
         int x1 = max(0, static_cast<int>(face.x1));
@@ -201,32 +228,10 @@ NullImplFRVT11::createFaceTemplate(
         templ.resize(dataSize);
         memcpy(templ.data(), bytes, dataSize);
         templs.push_back(templ);
-
-        cropImg.release();
-        faceMat.release();
     }
 
-
+    faceMat.release();
     return ReturnStatus(ReturnCode::Success);
-
-
-    // int numFaces = rand() % 4 + 1;
-    // for (int i = 1; i <= numFaces; i++) {
-    //     std::vector<uint8_t> templ;
-    //     /* Note: example code, potentially not portable across machines. */
-    //     std::vector<float> fv = {1.0, 2.0, 8.88, 765.88989};
-    //     /* Multiply vector values by scalar */
-    //     for_each(fv.begin(), fv.end(), [i](float &f){ f *= i; });
-    //     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(fv.data());
-    //     int dataSize = sizeof(float) * fv.size();
-    //     templ.resize(dataSize);
-    //     memcpy(templ.data(), bytes, dataSize);
-    //     templs.push_back(templ);
-
-    //     eyeCoordinates.push_back(EyePair(true, true, i, i, i+1, i+1));
-    // } 
-    
-    // return ReturnStatus(ReturnCode::Success);
 }
 
 ReturnStatus
@@ -235,13 +240,18 @@ NullImplFRVT11::matchTemplates(
         const std::vector<uint8_t> &enrollTemplate,
         double &score)
 {
-    float *featureVector = (float *)enrollTemplate.data();
+    // The expected size in bytes of a single feature vector template.
+    const size_t expected_template_size = this->featureVectorSize * sizeof(float);
 
-    for (unsigned int i=0; i<this->featureVectorSize; i++) {
-	std::cout << std::setprecision(10) << featureVector[i] << std::endl;
+    if (verifTemplate.size() != expected_template_size || enrollTemplate.size() != expected_template_size) {
+        score = -1.0;
+        return ReturnStatus(ReturnCode::VerifTemplateError); 
     }
 
-    score = rand() % 1000 + 1;
+    const float *verifVector = reinterpret_cast<const float*>(verifTemplate.data());
+    const float *enrollVector = reinterpret_cast<const float*>(enrollTemplate.data());
+
+    score = calculateCosineSimilarity(enrollVector, verifVector, this->featureVectorSize);
     return ReturnStatus(ReturnCode::Success);
 }
 
@@ -250,8 +260,4 @@ Interface::getImplementation()
 {
     return std::make_shared<NullImplFRVT11>();
 }
-
-
-
-
 

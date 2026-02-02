@@ -54,7 +54,7 @@ public:
 
 private:
     std::string configDir;
-    static const int featureVectorSize{4};
+    static const int featureVectorSize{128};
     ArcFace recognizor;
     RetinaFace detector;
     // Some other members

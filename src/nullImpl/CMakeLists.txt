@@ -23,13 +23,13 @@ link_directories(
 )
 
 # # Build the shared libraries
-# add_library (frvt_11_null_001 SHARED nullimplfrvt11.cpp)
+add_library (frvt_11_null_001 SHARED nullimplfrvt11.cpp RetinaFace.cpp ArcFace.cpp)
 
-# Add the main executable
-add_executable(main_exec main.cpp RetinaFace.cpp ArcFace.cpp)
+# # Add the main executable
+# add_executable(main_exec main.cpp RetinaFace.cpp ArcFace.cpp)
 
 target_link_libraries(
-    main_exec 
+    frvt_11_null_001 
     libopencv_core.so 
     libonnxruntime.so
     libopencv_imgproc.so 
@@ -42,7 +42,7 @@ target_link_libraries(
 
 )
 
-set_target_properties(main_exec PROPERTIES
+set_target_properties(frvt_11_null_001 PROPERTIES
     BUILD_RPATH "$ORIGIN/../lib/opencv2:$ORIGIN/../lib/onnxruntime"
     INSTALL_RPATH "$ORIGIN/../lib/opencv2:$ORIGIN/../lib/onnxruntime"
 )

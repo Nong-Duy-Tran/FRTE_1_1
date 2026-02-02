@@ -33,7 +33,6 @@ class ArcFace
         std::vector<float> preprocess(cv::Mat img, FacePts landmark);
 
     private:
-        // --- ONNX Runtime Members (Replaces MXNet members) ---
         Ort::Env env_;
         Ort::Session* session_ = nullptr; // Using a pointer to manage lifetime
         Ort::AllocatorWithDefaultOptions allocator_;

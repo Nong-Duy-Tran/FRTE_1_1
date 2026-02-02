@@ -65,7 +65,6 @@ private:
 
 
 private:
-    // --- ONNX Runtime Members (Replaces MXNet members) ---
     Ort::Env env_;
     Ort::Session* session_ = nullptr; // Using a pointer to manage lifetime
     Ort::AllocatorWithDefaultOptions allocator_;
@@ -80,10 +79,10 @@ private:
     int input_width_;
     int input_height_;
     
-    // Image normalization parameters
-    float pixel_means[3] = {104.0f, 117.0f, 123.0f}; // Typical BGR means for RetinaFace
-    float pixel_stds[3] = {1.0f, 1.0f, 1.0f};
-    float pixel_scale_ = 1.0f;
+    // // Image normalization parameters
+    // float pixel_means[3] = {104.0f, 117.0f, 123.0f}; // Typical BGR means for RetinaFace
+    // float pixel_stds[3] = {1.0f, 1.0f, 1.0f};
+    // float pixel_scale_ = 1.0f;
 
     float variance[2] = {0.1f, 0.2f};
 

@@ -99,10 +99,10 @@ std::vector<float> ArcFace::preprocess(cv::Mat img, FacePts landmark) {
 
 
 std::vector<float> ArcFace::GetEmbedding(cv::Mat img, FacePts landmarks) {
-    std::vector<float> embedding;
-    if (img.empty()) {
-        return embedding;
-    }
+    // std::vector<float> embedding;
+    // if (img.empty()) {
+    //     return embedding;
+    // }
     
     std::vector<float> input_tensor_values = preprocess(img, landmarks);
     

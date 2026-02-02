@@ -147,23 +147,6 @@ std::vector<FaceDetectInfo> RetinaFace::detect(cv::Mat img, float threshold, flo
     const float* conf_ptr = output_tensors[1].GetTensorData<float>();
     const float* landmarks_ptr = output_tensors[2].GetTensorData<float>();
 
-    int loc_ptr_size = output_tensors[0].GetTensorTypeAndShapeInfo().GetElementCount();
-    std::cout << "number boxes element:" << loc_ptr_size << std::endl;
-    for (int i = 0; i < loc_ptr_size; i++) {
-        if (loc_ptr[i] < 0) std::cout << "Nope 1" << std::endl; break;
-    }
-
-    int conf_ptr_size = output_tensors[1].GetTensorTypeAndShapeInfo().GetElementCount();
-    std::cout << "number scores element:" << conf_ptr_size << std::endl;
-    for (int i = 0; i < conf_ptr_size; i++) {
-        if (conf_ptr[i] < 0) std::cout << "Nope 2" << std::endl; break;
-    }
-
-    int landmarks_ptr_size = output_tensors[2].GetTensorTypeAndShapeInfo().GetElementCount();
-    std::cout << "number landmarks element:" << landmarks_ptr_size << std::endl;
-    for (int i = 0; i < landmarks_ptr_size; i++) {
-        if (landmarks_ptr[i] < 0) std::cout << "Nope 3" << std::endl; break;
-    }
 
     // ====================================================================
     // CLARIFICATION POINT 2: Correct Scaling Factors
