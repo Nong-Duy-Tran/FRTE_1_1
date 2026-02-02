@@ -13,6 +13,7 @@ check_folders
 
 # Compile and build implementation library against
 # validation test driver
+export LD_LIBRARY_PATH=$(pwd)/lib/opencv2
 scripts/compile_and_link.sh
 retcode=$?
 if [[ $retcode != 0 ]]; then
@@ -20,7 +21,7 @@ if [[ $retcode != 0 ]]; then
 fi
 
 # Set dynamic library path to the folder location of the developer's submission library
-export LD_LIBRARY_PATH=$(pwd)/lib
+export LD_LIBRARY_PATH=$(pwd)/lib/opencv2
 
 # Run testdriver against linked library
 # and validation images
